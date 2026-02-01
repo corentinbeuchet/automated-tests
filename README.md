@@ -196,7 +196,7 @@ git switch -c feat/tests
 3. Ouvrez une *Pull Request* vers `main`
 
 📌 Résultat attendu :
-- La CI se lance automatiquement
+- La CI se lance automatiquement mais est en erreur, trouvez une solution en observant les logs
 - Le merge est bloqué tant que les tests ne passent pas
 
 ---
