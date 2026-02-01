@@ -133,7 +133,7 @@ Exécutez les tests :
 ---
 
 ## 5️⃣ Test d’intégration (Spring Boot)
-Ajoutez un test d’intégration :
+Jetez un coup d'oeil au test d’intégration mis par défaut:
 
 ```java
 package ort.lyon.demo;
@@ -144,9 +144,9 @@ import org.springframework.boot.test.context.SpringBootTest;
 @SpringBootTest
 class DemoApplicationTests {
 
-    @Test
-    void leContexteSpringSeLanceCorrectement() {
-    }
+	@Test
+	void contextLoads() {
+	}
 }
 ```
 
