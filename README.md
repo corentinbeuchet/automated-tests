@@ -1,26 +1,28 @@
-# 🧪 Exercice 2 – Intégration de tests automatisés dans un pipeline CI/CD
+# 🧪 Exercice 3 – Tests automatisés, livrable et qualité dans un pipeline CI/CD
 *(Spring Boot + Gradle)*
 
 ---
 
 ## 📚 Contexte
-Cet exercice fait suite aux précédents où :
-- un dépôt GitHub a été créé et sécurisé,
-- un pipeline CI/CD a été mis en place,
-- des règles de protection de branche ont été configurées.
+Cet exercice fait suite à l'exercice 2, où vous avez :
+- créé et sécurisé un dépôt GitHub,
+- mis en place une première CI,
+- protégé la branche `main` (PR obligatoire, CI bloquante, revue).
 
-Vous allez **générer un projet Spring Boot avec Spring Initializr**, y ajouter des **tests automatisés**, puis les intégrer dans un **pipeline CI/CD**.
+La CI de l'exercice 2 ne « testait » rien : un simple `echo`. Ici, vous allez **générer un vrai projet Spring Boot**, écrire des **tests automatisés**, puis faire produire à la CI un **livrable**, un **contrôle qualité** et un **test de performance**.
 
 ---
 
-## 🎯 Objectifs pédagogiques
-À la fin de cet exercice, vous serez capable de :
-- Générer un projet Spring Boot avec Spring Initializr
-- Utiliser **Gradle** comme outil de build
-- Configurer le projet pour **Java 25**
-- Mettre en place des tests unitaires et d'intégration
-- Intégrer l'exécution des tests dans un pipeline CI/CD
-- Comprendre comment la CI bloque un merge lorsque les tests échouent
+## 🎯 Ce que vous devez comprendre et savoir faire
+À la fin de cet exercice, vous devez être capable de :
+- **Générer et lancer** un projet Spring Boot avec Gradle et Java 25 (LTS).
+- **Écrire un test unitaire qui a du sens** : il appelle le vrai code, et il échoue si le comportement change.
+- **Faire la différence** entre un test unitaire (une classe isolée) et un test d'intégration (l'application démarrée).
+- **Lire les logs d'une CI en échec** et en trouver la cause, sans deviner.
+- **Expliquer ce qu'est un livrable** (le `.jar`) et pourquoi on le construit **une seule fois**, dans la CI, plutôt que sur le poste d'un développeur.
+- **Expliquer pourquoi un contrôle de style automatique** (Checkstyle) évite des débats en revue de code.
+- **Expliquer ce qu'est un test non fonctionnel** : l'application répond juste, mais répond-elle assez vite, sous charge ?
+- **Dire ce que garantit, et ne garantit pas, une CI verte.**
 
 ---
 
@@ -196,7 +198,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-java@v5
@@ -249,20 +251,196 @@ Remettez le bon message et vérifiez que la CI redevient verte. Vous pouvez alor
 
 ---
 
+# 🧩 PARTIE 6 – Produire un livrable
+
+Jusqu'ici, la CI dit seulement « les tests passent ». Mais ce qu'on déploie, c'est un **fichier** : le `.jar` de l'application. On veut qu'il soit construit **par la CI**, toujours de la même façon, et récupérable.
+
+## 🔟 Donner un nom fixe au jar
+À la fin de `build.gradle`, ajoutez :
+
+```groovy
+tasks.named('bootJar') {
+    archiveFileName = 'app.jar'
+}
+```
+
+Vérifiez en local :
+
+```bash
+./gradlew build
+java -jar build/libs/app.jar
+```
+
+> `./gradlew build` fait plus que `test` : il compile, lance **toutes** les vérifications (`check`) et fabrique le jar.
+
+## 1️⃣1️⃣ Publier le livrable depuis la CI
+Sur une nouvelle branche (`feat/livrable`), remplacez la dernière étape du job `build` de `ci.yml` par :
+
+```yaml
+      - name: Construire et vérifier
+        run: ./gradlew build
+      - name: Publier le livrable
+        uses: actions/upload-artifact@v7
+        with:
+          name: app
+          path: build/libs/app.jar
+      - name: Publier les rapports (même en cas d'échec)
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: rapports
+          path: build/reports/
+```
+
+Poussez, ouvrez une PR, puis ouvrez le run dans l'onglet **Actions** : en bas de la page, la section **Artifacts** contient `app` et `rapports`. Téléchargez `rapports` et ouvrez `tests/test/index.html`.
+
+📌 Le jar que vous téléchargez est **exactement** celui qui a été testé. C'est lui, et pas un jar reconstruit sur un poste, qu'on déploiera.
+
+Une fois la CI verte, mergez la PR.
+
+---
+
+# 🧩 PARTIE 7 – Qualité du code (Checkstyle)
+
+Des règles de style vérifiées **par une machine** : plus besoin d'en débattre en revue de code, la revue peut se concentrer sur la logique.
+
+## 1️⃣2️⃣ Activer Checkstyle
+Sur une nouvelle branche (`feat/qualite`), dans le bloc `plugins` de `build.gradle`, ajoutez `id 'checkstyle'`, puis ajoutez à la fin du fichier :
+
+```groovy
+checkstyle {
+    toolVersion = '14.1.0'   // dernière version : https://checkstyle.org
+    maxWarnings = 0
+}
+```
+
+Créez le fichier de règles `config/checkstyle/checkstyle.xml` :
+
+```xml
+<?xml version="1.0"?>
+<!DOCTYPE module PUBLIC
+    "-//Checkstyle//DTD Checkstyle Configuration 1.3//EN"
+    "https://checkstyle.org/dtds/configuration_1_3.dtd">
+<module name="Checker">
+  <module name="LineLength">
+    <property name="max" value="120"/>
+  </module>
+  <module name="TreeWalker">
+    <module name="AvoidStarImport"/>
+    <module name="UnusedImports"/>
+    <module name="RedundantImport"/>
+    <module name="NeedBraces"/>
+    <module name="EmptyCatchBlock"/>
+    <module name="EqualsHashCode"/>
+    <module name="SimplifyBooleanExpression"/>
+  </module>
+</module>
+```
+
+## 1️⃣3️⃣ Constater et corriger
+Lancez :
+
+```bash
+./gradlew check
+```
+
+📌 Résultat attendu : **échec**. Lisez le message : il indique le fichier, la ligne et la règle enfreinte. Le rapport détaillé est dans `build/reports/checkstyle/`.
+
+Corrigez le code (pas la règle !), relancez `./gradlew check` jusqu'à ce qu'il passe, puis poussez et ouvrez une PR : la CI (`./gradlew build`) applique maintenant les mêmes règles. Mergez une fois la CI verte.
+
+<details>
+<summary>Indice</summary>
+
+C'est le test unitaire : `import static org.junit.jupiter.api.Assertions.*;` importe tout avec `*`. Importez seulement ce qui sert : `import static org.junit.jupiter.api.Assertions.assertEquals;`
+</details>
+
+---
+
+# 🧩 PARTIE 8 – Test de performance (k6)
+
+Les tests de la partie 3 vérifient que l'application répond **juste**. Un test **non fonctionnel** vérifie qu'elle répond **assez vite**, même quand beaucoup d'utilisateurs l'appellent en même temps.
+
+## 1️⃣4️⃣ Le scénario de charge
+Sur une nouvelle branche (`feat/perf`), créez `perf/hello.js` :
+
+```javascript
+import http from 'k6/http';
+import { check } from 'k6';
+
+export const options = {
+  vus: 20,            // 20 utilisateurs virtuels en parallèle
+  duration: '20s',
+  thresholds: {
+    http_req_failed: ['rate<0.01'],     // moins de 1 % d'erreurs
+    http_req_duration: ['p(95)<200'],   // 95 % des requêtes en moins de 200 ms
+  },
+};
+
+export default function () {
+  const res = http.get('http://localhost:8080/hello');
+  check(res, { 'statut 200': (r) => r.status === 200 });
+}
+```
+
+📌 Les `thresholds` sont le critère de réussite : si l'un n'est pas respecté, k6 échoue, et la CI aussi.
+
+## 1️⃣5️⃣ Le job de performance
+Ajoutez ce second job à `ci.yml`, au même niveau que `build` :
+
+```yaml
+  performance:
+    needs: build
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: '25'
+      - name: Récupérer le livrable construit par le job build
+        uses: actions/download-artifact@v8
+        with:
+          name: app
+          path: build/libs
+      - name: Démarrer l'application
+        run: |
+          java -jar build/libs/app.jar &
+          for i in $(seq 1 30); do
+            curl -fs http://localhost:8080/hello && exit 0
+            sleep 2
+          done
+          echo "L'application n'a pas démarré" && exit 1
+      - uses: grafana/setup-k6-action@v1
+      - uses: grafana/run-k6-action@v1
+        with:
+          path: perf/hello.js
+```
+
+Poussez et ouvrez une PR. Dans les logs du job `performance`, repérez la durée `p(95)` et le taux d'erreurs.
+
+> 📌 `needs: build` : le test de charge ne tourne que si le build est vert, et il teste **le même jar** que celui publié à la partie 6.
+
+## 1️⃣6️⃣ Faire échouer le test de performance
+Rendez le seuil irréaliste (`p(95)<1`), poussez : le job `performance` passe au **rouge**. Remettez `200`, puis mergez.
+
+Bonus : ajoutez `performance` aux checks obligatoires de `main`.
+
+---
+
 # ❓ Questions de réflexion
 1. Pourquoi les tests automatisés sont-ils essentiels dans un pipeline CI/CD ?
 2. Quelle est la différence entre tests unitaires et tests d'intégration ?
 3. Pourquoi la CI ne suffit-elle pas sans revue de code ?
 4. Que se passerait-il si les tests étaient exécutés uniquement manuellement ?
 5. Si l'on supprime le test unitaire, la CI reste verte. Qu'est-ce que cela dit de la confiance qu'on peut accorder à une CI verte ?
+6. Pourquoi publier le jar depuis la CI plutôt que de le construire sur son poste au moment de déployer ?
+7. Le test de performance tourne sur une machine GitHub partagée. Quelles limites cela pose-t-il pour interpréter ses résultats ?
 
 ---
 
 # 🏁 Conclusion
-Cet exercice illustre un workflow CI/CD professionnel basé sur :
-- Spring Boot
-- Gradle
-- Tests automatisés
-- GitHub Actions
+Votre pipeline fait maintenant ce qu'on attend d'une vraie CI :
 
-Il constitue une base standard utilisée dans de nombreux projets DevOps modernes.
+**tests → contrôle qualité → livrable → test de performance**
+
+À l'exercice 4, vous allez **déployer** ce livrable : dans une image Docker, puis vers plusieurs environnements avec Ansible.
