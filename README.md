@@ -1,4 +1,7 @@
 # 🧪 Exercice 3 – Tests automatisés, livrable et qualité dans un pipeline CI/CD
+
+> 🎯 **Priorités** : tout cet exercice est l'essentiel (tests, livrable, qualité, performance), ce que vous devrez savoir refaire seul à l'évaluation finale. Seul le bonus de la fin est pour aller plus loin.
+
 *(Spring Boot + Gradle)*
 
 ---
